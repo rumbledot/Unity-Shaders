@@ -21,7 +21,6 @@ public class PlayerMovement : MonoBehaviour
         
     }
 
-    // Update is called once per frame
     void Update()
     {
         this.GatherInputs();
@@ -37,6 +36,19 @@ public class PlayerMovement : MonoBehaviour
         this.HandleJumping();
     }
 
+    private void FixedUpdate()
+    {
+        
+    }
+
+    private void OnCollisionEnter(Collision collision)
+    {
+        if (collision.gameObject.tag.Equals("Wall"))
+        {
+            this.PlayerRB.AddForce(this.transform.forward * -10.0f);
+        }
+    }
+
     #region Inputs
 
     private struct UserInputs
@@ -50,23 +62,30 @@ public class PlayerMovement : MonoBehaviour
         public float Z;
     }
 
-    private UserInputs _inputs;
-    private Vector3 _dir;
+    private UserInputs Inputs;
+    private Vector3 Direction;
+    private bool Dahsing = false;
 
     private void GatherInputs()
     {
-        this._inputs.RawX = (int)Input.GetAxisRaw("Horizontal");
-        this._inputs.RawZ = (int)Input.GetAxisRaw("Vertical");
-        this._inputs.X = Input.GetAxis("Horizontal");
-        this._inputs.Z = Input.GetAxis("Vertical");
+        this.Inputs.RawX = (int)Input.GetAxisRaw("Horizontal");
+        this.Inputs.RawZ = (int)Input.GetAxisRaw("Vertical");
+        this.Inputs.X = Input.GetAxis("Horizontal");
+        this.Inputs.Z = Input.GetAxis("Vertical");
+
+        if (Input.GetKeyDown(KeyCode.LeftShift)) 
+        {
+            this.Dahsing = true;
+        }
     }
 
     #endregion Inputs
 
     [Header("Detection")] [SerializeField] private LayerMask _groundMask;
-    [SerializeField] private float _grounderOffset = -1.0f, _grounderRadius = 0.2f;
+    [SerializeField] private float GroundOffset = -1.0f, GroundCheckRadius = 0.2f;
     [SerializeField] private float _wallCheckOffset = 0.5f, _wallCheckRadius = 0.38f;
     private bool IsGrounded;
+    private bool GroundedCheck;
 
     private readonly Collider[] _ground = new Collider[1];
     private readonly Collider[] _wall = new Collider[1];
@@ -74,17 +93,17 @@ public class PlayerMovement : MonoBehaviour
     private void HandleGrounding()
     {
         // Grounder
-        var grounded = Physics.OverlapSphereNonAlloc(transform.position + new Vector3(0, _grounderOffset), _grounderRadius, _ground, _groundMask) <= 0;
+        this.GroundedCheck = Physics.OverlapSphereNonAlloc(transform.position + new Vector3(0, GroundOffset), GroundCheckRadius, _ground, _groundMask) <= 0;
 
-        if (!IsGrounded && grounded)
+        if (!this.IsGrounded && this.GroundedCheck)
         {
-            IsGrounded = true;
-            _hasJumped = false;
-            _hasDoubleJumped = false;
+            this.IsGrounded = true;
+            this.HasJumped = false;
+            this.HasDoubleJumped = false;
         }
-        else if (IsGrounded && !grounded)
+        else if (this.IsGrounded && !this.GroundedCheck)
         {
-            IsGrounded = false;
+            this.IsGrounded = false;
         }
     }
 
@@ -92,7 +111,7 @@ public class PlayerMovement : MonoBehaviour
     {
         Gizmos.color = Color.red;
 
-        Gizmos.DrawWireSphere(transform.position + new Vector3(0, _grounderOffset), _grounderRadius);
+        Gizmos.DrawWireSphere(transform.position + new Vector3(0, GroundOffset), GroundCheckRadius);
     }
 
     #region Weapon
@@ -123,13 +142,15 @@ public class PlayerMovement : MonoBehaviour
 
     #endregion Weapon
 
-
     #region Walking
 
-    [Header("Walking")] [SerializeField] private float MaxSpeed = 10.0f;
+    [Header("Movement")] [SerializeField] private float MaxSpeed = 10.0f;
     [SerializeField] private float MinSpeed = 4.0f;
     [SerializeField] private float Acceleration = 1.0f;
     private float Speed = 1.0f;
+    [SerializeField] private float DashSpeed = 20f;
+    [SerializeField] private ParticleSystem Dash01FX;
+    [SerializeField] private ParticleSystem Dash02FX;
 
     private Vector3 MoveSideway;
     private Vector3 MoveForward;
@@ -139,35 +160,39 @@ public class PlayerMovement : MonoBehaviour
     {
         if (!this.IsGrounded) return;
 
-        MoveSideway = transform.right * this._inputs.RawX;
-        MoveForward = transform.forward * this._inputs.RawZ;
+        this.MoveSideway = transform.right * this.Inputs.RawX;
+        this.MoveForward = transform.forward * this.Inputs.RawZ;
 
-        this._dir = new Vector3(this._inputs.X, 0, this._inputs.Y);
-        if (this._dir != Vector3.zero)
+        this.Direction = new Vector3(this.Inputs.X, 0, this.Inputs.Y);
+
+        if (this.Dahsing)
         {
-            this.Speed += this.Acceleration * Time.deltaTime;
+            this.Dash01FX.Play();
+            this.Dash02FX.Play();
+
+            this.Dahsing = false;
+
+            this.Speed = this.DashSpeed;
         }
-        else
+        else 
         {
-            this.Speed -= this.Acceleration * Time.deltaTime;
+            if (this.Direction != Vector3.zero)
+            {
+                this.Speed += this.Acceleration * Time.deltaTime;
+            }
+            else
+            {
+                this.Speed -= this.Acceleration * Time.deltaTime;
+            }
+
+            this.Speed = Mathf.Clamp(this.Speed, this.MinSpeed, this.MaxSpeed);
         }
 
-        this.Speed = Mathf.Clamp(this.Speed, this.MinSpeed, this.MaxSpeed);
+        this.MoveVelocity = (this.MoveSideway + this.MoveForward).normalized * this.Speed;
 
-        MoveVelocity = (this.MoveSideway + this.MoveForward).normalized * this.Speed;
-
-        if (MoveVelocity != Vector3.zero)
+        if (this.MoveVelocity != Vector3.zero)
         {
-            this.PlayerRB.MovePosition(this.PlayerRB.position + MoveVelocity * Time.fixedDeltaTime);
-        }
-    }
-
-    private void OnCollisionEnter(Collision collision)
-    {
-        if (collision.gameObject.tag.Equals("Wall"))
-        {
-            Debug.LogWarning($"Player hit wall");
-            this.PlayerRB.AddForce(this.transform.forward * -10.0f);
+            this.PlayerRB.MovePosition(this.PlayerRB.position + this.MoveVelocity * Time.fixedDeltaTime);
         }
     }
 
@@ -176,73 +201,82 @@ public class PlayerMovement : MonoBehaviour
     #region Look Rotation
 
     [SerializeField] private float LookSpeed = 5.0f;
+    private Vector3 LookDirection;
+    private float HorizontalMouseMovement;
 
     private void HandleRotation()
     {        
-        float LookDirection = Input.GetAxisRaw("Mouse X");
+        this.HorizontalMouseMovement = Input.GetAxisRaw("Mouse X");
 
-        Vector3 Direction = new Vector3(0, Mathf.Clamp(LookDirection, -1.0f, 1.0f), 0) * LookSpeed;
+        this.LookDirection = new Vector3(0, Mathf.Clamp(this.HorizontalMouseMovement, -1.0f, 1.0f), 0) * this.LookSpeed;
 
-        this.PlayerRB.MoveRotation(this.PlayerRB.rotation * Quaternion.Euler(Direction));
+        this.PlayerRB.MoveRotation(this.PlayerRB.rotation * Quaternion.Euler(this.LookDirection));
     }
 
     #endregion Look Rotation
 
     #region Jumping
 
-    [Header("Jumping")] [SerializeField] private float _jumpForce = 15;
-    [SerializeField] private float _fallMultiplier = 7;
-    [SerializeField] private float _jumpVelocityFalloff = 8;
-    [SerializeField] private ParticleSystem _jumpParticles;
+    [Header("Jumping")] [SerializeField] private float JumpForce = 15;
+    [SerializeField] private float FallForceMultiplier = 7;
+    [SerializeField] private float MaxJumpVelocity = 8;
+    [SerializeField] private ParticleSystem JumpParticleFX;
+    [SerializeField] private TrailRenderer TrailFX;
     [SerializeField] private Transform _jumpLaunchPoof;
     [SerializeField] private float _wallJumpLock = 0.25f;
     [SerializeField] private float _wallJumpMovementLerp = 20;
     [SerializeField] private float _coyoteTime = 0.3f;
-    [SerializeField] private bool _enableDoubleJump = true;
+    [SerializeField] private bool CanDoubleJump = true;
     private float _timeLeftGrounded = -10;
     private float _timeLastWallJumped;
-    private bool _hasJumped;
-    private bool _hasDoubleJumped;
+    private bool HasJumped;
+    private bool HasDoubleJumped;
+    private bool PlayJumpFX = false;
+    private GameObject fx;
 
     private void HandleJumping()
     {
+        if (this.PlayJumpFX) 
+        {
+            this.JumpParticleFX.Play();
+            this.PlayJumpFX = false;
+        }
+
         if (Input.GetButtonDown("Jump"))
         {
-            if (!IsGrounded)
+            if (!this.IsGrounded)
             {
-                _timeLastWallJumped = Time.time;
+                this._timeLastWallJumped = Time.time;
             }
-            else if (IsGrounded 
-                || Time.time < _timeLeftGrounded + _coyoteTime 
-                || _enableDoubleJump && !_hasDoubleJumped)
+            else if (this.IsGrounded 
+                || Time.time < this._timeLeftGrounded + this._coyoteTime 
+                || this.CanDoubleJump && !this.HasDoubleJumped)
             {
-                if (!_hasJumped
-                    || (_hasJumped
-                        && !_hasDoubleJumped))
+                if (!this.HasJumped
+                    || (this.HasJumped
+                        && !this.HasDoubleJumped))
                 {
-                    ExecuteJump(new Vector2(this.PlayerRB.velocity.x, _jumpForce), _hasJumped);
+                    this.ExecuteJump();
                 }
             }
         }
 
-        if (this.PlayerRB.velocity.y < _jumpVelocityFalloff
+        if (this.PlayerRB.velocity.y < this.MaxJumpVelocity
             || (this.PlayerRB.velocity.y > 0
                 && !Input.GetButton("Jump")))
         {
-            this.PlayerRB.velocity += _fallMultiplier * Physics.gravity.y * Vector3.up * Time.deltaTime;
+            this.PlayerRB.velocity += this.FallForceMultiplier * Physics.gravity.y * Vector3.up * Time.deltaTime;
         }
     }
 
-    private void ExecuteJump(Vector3 dir, bool doubleJump = false)
+    private void ExecuteJump()
     {
-        var jump_fx = Instantiate(this._jumpParticles, this.transform.position, Quaternion.identity);
-        jump_fx.Play();
-        Destroy(jump_fx, 0.2f);
+        this.PlayJumpFX = true;
 
-        this.PlayerRB.velocity = dir;
-        _hasDoubleJumped = doubleJump;
-        _hasJumped = true;
-        IsGrounded = false;
+        this.PlayerRB.velocity = new Vector2(this.PlayerRB.velocity.x, this.JumpForce);
+        this.HasDoubleJumped = this.HasJumped;
+        this.HasJumped = true;
+        this.IsGrounded = false;
     }
 
     #endregion Jumping
